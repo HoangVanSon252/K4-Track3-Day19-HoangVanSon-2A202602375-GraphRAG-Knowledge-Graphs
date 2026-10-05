@@ -211,10 +211,12 @@ def main() -> int:
     rows = []
     for q in questions:
         for name, agent in (("flat", flat_agent), ("graph", graph_agent)):
+            time.sleep(4.1)  # Tránh lỗi Limit 15 requests/min của Gemini
             answer, usage = metered(llm, lambda: agent.answer(q["question"], top_k=args.top_k))
             row = {"id": q["id"], "type": q["type"], "pipeline": name, "answer": answer, "usage": usage,
                    "recall": keyword_recall(answer, q["must_include"])}
             if args.judge:
+                time.sleep(4.1)  # Tránh lỗi Limit 15 requests/min của Gemini
                 verdict = llm.chat(JUDGE_PROMPT.format(question=q["question"], gold=q["gold"], answer=answer), json_mode=True)
                 row["judge"] = json.loads(verdict).get("score", 0)
             rows.append(row)
