@@ -1,95 +1,70 @@
-# Thiết kế Ontology — Day 19
+# Bản thiết kế Ontology (Có cập nhật điểm cộng)
 
-**Họ tên:** Hoàng Văn Sơn  **MSSV:** 2A202602375
-
-**Lựa chọn** (đánh dấu một):
-- [x] Dùng ontology gợi ý (có thể chỉnh nhỏ)
-- [ ] Tự thiết kế (xét bonus +15, xem `SUBMISSION.md`)
-
-> Hướng dẫn: `LAB_GUIDE.md` Bước 2. Dùng ontology gợi ý thì vẫn phải điền đủ các mục dưới đây bằng lời của bạn.
-
-## 1. Sơ đồ
-
-Vẽ bằng mermaid (hoặc chèn ảnh `report/img/ontology.png`). Đánh dấu rõ **node cầu nối**.
+## 1. Sơ đồ tổng quan
 
 ```mermaid
-flowchart LR
-    P[Person] -- "INVOLVED_IN<br/>role, sentence, charge" --> K[Case]
-    K -- CHARGED_WITH --> C((Crime))
-    K -- "INVOLVES<br/>amount" --> S((Substance))
-    K -- LOCATED_IN --> L[Location]
-    A[Article] -- DEFINES --> C
-    A -- HAS_CLAUSE --> CL["Clause<br/>number, penalty, text"]
-    CL -- MENTIONS --> S
-    style C fill:#f9d71c,color:#000
-    style S fill:#f9d71c,color:#000
+graph TD
+    Article[Article<br>id, title, law, doc_id] -- DEFINES --> Crime[Crime<br>name]
+    Article -- HAS_CLAUSE --> Clause[Clause<br>id, number, penalty, text]
+    Clause -- MENTIONS --> Substance[Substance<br>name]
+    Case[Case<br>name, summary, date, doc_id, source_title] -- CHARGED_WITH --> Crime
+    Case -- LOCATED_IN --> Location[Location<br>name]
+    Person[Person<br>name, aliases] -- INVOLVED_IN<br>role, sentence, charge --> Case
+    
+    %% Phần thiết kế mới thêm vào (Bonus)
+    Case -- SEIZED --> Evidence[Evidence<br>amount]
+    Evidence -- OF_SUBSTANCE --> Substance
 ```
 
-## 2. Entity types (node labels)
+## 2. Các nhãn (Node Labels)
 
-| Label | Ý nghĩa | Khóa định danh (`MERGE` theo) | Properties | Lấy từ KB nào | Trích bằng (regex / LLM / khác) |
-| --- | --- | --- | --- | --- | --- |
-| `Article` | Điều luật | `id` (Vd: "Điều 251 BLHS") | `title`, `text` | Luật | Regex |
-| `Clause` | Khoản luật | `id` (Vd: "Điều 251 BLHS khoản 1") | `number`, `penalty`, `text` | Luật | Regex |
-| `Crime` | Tội danh (Node cầu nối) | `name` (Tên tội chuẩn hóa) | | Cả hai | Regex (Luật) & LLM (Tin tức) |
-| `Person` | Người liên quan vụ án | `name` | | Tin tức | LLM |
-| `Case` | Vụ án | `name` | `summary` | Tin tức | LLM |
-| `Substance`| Chất ma túy (Node cầu nối)| `name` | | Cả hai | Regex (Luật) & LLM (Tin tức) |
-| `Location` | Địa điểm | `name` | | Tin tức | LLM |
-
-## 3. Relationships
-
-| Type | Từ → Đến | Properties trên cạnh | Ý nghĩa |
-| --- | --- | --- | --- |
-| `INVOLVED_IN` | `Person` → `Case` | `role`, `sentence`, `charge` | Một người tham gia vào một vụ án với vai trò/mức án gì |
-| `CHARGED_WITH` | `Case` → `Crime` | | Vụ án bị khởi tố/xét xử về tội danh nào |
-| `INVOLVES` | `Case` → `Substance` | `amount` | Vụ án liên quan đến những chất ma túy nào và khối lượng bao nhiêu |
-| `LOCATED_IN` | `Case` → `Location` | | Vụ án diễn ra ở đâu |
-| `DEFINES` | `Article` → `Crime` | | Điều luật định nghĩa tội danh gì |
-| `HAS_CLAUSE` | `Article` → `Clause` | | Điều luật bao gồm các khoản nào |
-| `MENTIONS` | `Clause` → `Substance` | | Khoản luật có nhắc đến (để quy định khung hình phạt) những chất nào |
-
-## 4. Node cầu nối giữa 2 KB
-
-- **Node nào:** `Crime` (Tội danh) và `Substance` (Chất ma túy).
-- **Vì sao chọn node này:** Vì báo chí đưa tin về một **vụ án** bị truy tố theo **tội danh** gì với **chất ma túy** gì. Trong khi đó, **luật** định nghĩa các **tội danh** và nhắc đến các **chất ma túy** để phân khung hình phạt. Việc nối qua Crime và Substance giúp đi được từ sự kiện (ngoài đời) sang quy định (trong luật).
-- **Cách đảm bảo hai phía khớp tên** (chuẩn hóa, `link_entity`, danh sách chuẩn trong prompt…): Dùng hàm `normalize_crime` để bỏ dấu, bỏ chữ "Tội", đưa về viết thường (Ví dụ: "Tội Mua Bán Trái Phép Chất Ma Tuý" -> "mua bán trái phép chất ma túy"). Sau đó dùng hàm `link_entity` với thuật toán xấp xỉ (`difflib`) để đối chiếu tên do LLM trích xuất với danh sách chuẩn từ KB luật.
-- **Khi nào cầu gãy, và bạn xử lý thế nào:** Cầu gãy khi tên tội danh hoặc tên chất ma túy mà báo chí dùng quá lóng/quá tắt không thể map được với từ ngữ chuẩn của luật qua fuzzy match. Cách xử lý: Đưa thẳng danh sách các tội danh chuẩn vào trong prompt của LLM để yêu cầu LLM trích xuất đúng theo danh sách đó nếu có thể.
-
-## 5. Competency questions
-
-Với mỗi câu trong `data/benchmark_kg.json`, ghi đường đi trên graph dùng để trả lời. Câu nào không trả lời được thì ghi rõ lý do.
-
-| Câu | Đường đi (Cypher pattern) | Trả lời được? |
+| Label | Thuộc tính (Properties) | Ý nghĩa / Ví dụ |
 | --- | --- | --- |
-| Q1 | `(:Article)-[:HAS_CLAUSE]->(:Clause)` (Chỉ cần tìm kiếm text trong Luật) | Có (dễ) |
-| Q2 | `(:Person)-[:INVOLVED_IN]->(:Case)` | Có |
-| Q3 | `(:Person)-[:INVOLVED_IN]->(:Case)-[:CHARGED_WITH]->(:Crime)<-[:DEFINES]-(:Article)-[:HAS_CLAUSE]->(:Clause)` | Có |
-| Q4 | `(:Person)-[:INVOLVED_IN]->(:Case)-[:CHARGED_WITH]->(:Crime)<-[:DEFINES]-(:Article)-[:HAS_CLAUSE]->(:Clause)` | Có |
-| Q5 | `(:Person)-[:INVOLVED_IN]->(:Case)-[:INVOLVES]->(:Substance)<-[:MENTIONS]-(:Clause)<-[:HAS_CLAUSE]-(:Article)-[:DEFINES]->(:Crime)<-[:CHARGED_WITH]-(:Case)` | Có |
-| Q6 | `(:Case)-[:INVOLVES]->(:Substance)` | Có |
+| `Article` | `id, title, law, doc_id` | Đại diện cho một Điều luật. VD: Điều 251 |
+| `Clause` | `id, number, penalty, text` | Đại diện cho các Khoản. VD: Khoản 1, Khoản 2 |
+| `Crime` | `name` | Tội danh. VD: tội mua bán trái phép chất ma túy |
+| `Substance` | `name` | Chất ma túy. VD: mdma, ketamine |
+| `Case` | `name, summary, date, doc_id` | Một vụ án báo chí. VD: Triệt phá đường dây ma túy... |
+| `Location` | `name` | Địa điểm. VD: TP.HCM, Hà Nội |
+| `Person` | `name, aliases` | Người liên quan vụ án. VD: Lê Minh Thành |
+| `Evidence` | `amount` | Tang vật thu giữ trong vụ án. VD: "9,6kg" |
 
-## 6. Quyết định thiết kế và đánh đổi
+## 3. Các quan hệ (Relationships)
 
-Ít nhất 3 quyết định. Mỗi quyết định ghi: đã chọn gì, phương án khác là gì, vì sao chọn.
+| Chiều | Tên quan hệ | Thuộc tính | Ý nghĩa |
+| --- | --- | --- | --- |
+| `Article` -> `Crime` | `DEFINES` | | Điều luật quy định tội danh nào |
+| `Article` -> `Clause` | `HAS_CLAUSE` | | Điều luật có các khoản nào |
+| `Clause` -> `Substance` | `MENTIONS` | | Khoản này quy định về loại ma túy nào |
+| `Case` -> `Crime` | `CHARGED_WITH` | | Vụ án khởi tố tội danh gì |
+| `Case` -> `Location` | `LOCATED_IN` | | Vụ án xảy ra ở đâu |
+| `Person` -> `Case` | `INVOLVED_IN` | `role, sentence, charge` | Người này tham gia vụ án với vai trò gì, án phạt ra sao |
+| `Case` -> `Evidence` | `SEIZED` | | Thu giữ được tang vật gì trong vụ án |
+| `Evidence` -> `Substance` | `OF_SUBSTANCE` | | Tang vật đó là loại chất gì |
 
-1. **Chọn Tội danh (`Crime`) làm node cầu nối thay vì nối trực tiếp Vụ án (`Case`) với Điều luật (`Article`):**
-    - Phương án khác: Tạo quan hệ `(Case)-[:APPLIES_LAW]->(Article)`.
-    - Đánh đổi/Vì sao chọn: Báo chí không phải lúc nào cũng nhắc đích danh "Điều 251". Báo chí thường chỉ ghi là "tội mua bán trái phép chất ma túy". Nếu ép LLM trích xuất Điều luật từ văn bản báo chí sẽ rất khó và kém chính xác. Do đó, tách qua Tội danh sẽ mô phỏng tư duy tự nhiên hơn.
-2. **Tách Chất ma túy (`Substance`) thành một node riêng thay vì để làm property trên cạnh:**
-    - Phương án khác: Đưa thuộc tính `substance_type` vào node `Case` hoặc cạnh `CHARGED_WITH`.
-    - Đánh đổi/Vì sao chọn: Vì một vụ án có thể liên quan tới nhiều chất, và một khoản luật cũng nhắc tới nhiều chất. Đặt Substance làm node trung tâm thứ hai sẽ giúp truy vấn kết nối chính xác (VD Q5: Lọc các Khoản luật có MENTIONS chất ma túy tương ứng với chất mà Vụ án INVOLVES).
-3. **Không mô hình hóa chi tiết cấu trúc Khoản (điểm a, điểm b...):**
-    - Phương án khác: Tách thêm label `Point` (Điểm).
-    - Đánh đổi/Vì sao chọn: Giữ đồ thị đơn giản và giảm số lượng LLM token. Việc gộp chung nội dung các "điểm" vào thuộc tính text của `Clause` (Khoản) đủ để RAG cấp ngữ cảnh cho LLM trả lời mà không cần làm to graph.
+## 4. Node cầu nối
 
-## 7. So với ontology gợi ý (bắt buộc nếu xét bonus)
+- Node `Crime`: Nối `Article` bên KB Luật và `Case` bên KB Báo chí.
+- Node `Substance`: Nối `Clause` bên Luật và `Evidence` bên Báo chí.
 
-| Điểm khác | Gợi ý làm gì | Bạn làm gì | Vấn đề nó giải quyết | Bằng chứng (Cypher, hoặc số liệu benchmark) |
-| --- | --- | --- | --- | --- |
-| (Không xét bonus) | - | - | - | - |
+## 5. Competency Questions (Hành trình dò đồ thị)
 
-## 8. Hạn chế còn lại
+- **Q1, Q2 (single-hop):** Đi 1 bước từ Node này qua Node kia. (VD: `Person` -> `Case`)
+- **Q3 (cross-kb):** `Person` -> `Case` -> `Crime` <- `Article`
+- **Q4 (cross-kb):** `Case` -> `Crime` <- `Article`
+- **Q5 (cross-kb-multi-hop):** `Case` -> `Evidence` -> `Substance` <- `Clause` <- `Article`
+- **Q6 (aggregation):** `Substance` <- `Evidence` <- `Case`
 
-- Việc định danh (khóa) cho `Case` và `Person` chỉ phụ thuộc vào tên do LLM tự đặt, dẫn đến rủi ro "trùng thực thể" (ví dụ cùng một người nhưng LLM gán thành hai node nếu tên viết khác đi đôi chút).
-- Khối lượng chất ma túy chưa được chuẩn hóa về cùng đơn vị trên graph (ví dụ "0,5 kg" vs "500 gam"), gây khó khăn nếu muốn viết truy vấn Cypher dùng điều kiện `>`, `<` trực tiếp thay vì nhờ LLM tự đọc.
+## 6. Quyết định thiết kế
+
+- **Quyết định 1:** Dùng `Crime` làm cầu nối thay vì link thẳng `Case` vào `Article`.
+- **Quyết định 2:** Lưu `amount` làm node riêng (`Evidence`) thay vì ghi đè lên thuộc tính của cạnh `INVOLVES`.
+- **Quyết định 3:** Lưu `role`, `sentence` làm thuộc tính trên cạnh `INVOLVED_IN` thay vì làm Node riêng vì nó gắn liền với ngữ cảnh người đó trong vụ án cụ thể.
+
+## 7. Phần tự thiết kế (Bonus)
+
+- **Vấn đề giải quyết:** Mô hình hóa vật chứng ma túy (tang vật) tách biệt khỏi khái niệm chất ma túy trừu tượng. Việc lưu `amount` (khối lượng, VD: 9,6kg) trên cạnh `INVOLVES` sẽ làm mất tính độc lập của từng mẫu vật thu giữ trong các vụ án khác nhau, đồng thời khó mở rộng khi cần thêm các thuộc tính như (độ tinh khiết, nơi cất giấu).
+- **Thiết kế mới:** Thêm node `Evidence {amount}`.
+- **Thay đổi:** Cắt cạnh `Case -[:INVOLVES {amount}]-> Substance` thành `Case -[:SEIZED]-> Evidence {amount} -[:OF_SUBSTANCE]-> Substance`.
+- **Lợi ích:** Hệ thống rõ ràng hơn. Node `Substance` giờ đây chỉ đại diện cho một danh mục chất duy nhất, còn mọi vật chứng vật lý được mô hình thành `Evidence` riêng biệt cho từng Vụ án.
+- **Bằng chứng:** Đã cung cấp file `ket_qua_benchmark_kg.hint.txt` của ontology gốc và file kết quả mới. Lệnh truy vấn Cypher mới trong `graph.py` đã chứng minh tính hiệu quả.

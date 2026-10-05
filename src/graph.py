@@ -239,8 +239,11 @@ class Neo4jGraph:
             FOREACH (loc IN CASE WHEN $location = '' THEN [] ELSE [$location] END |
                 MERGE (l:Location {name: loc}) MERGE (k)-[:LOCATED_IN]->(l))
             FOREACH (crime IN $charges | MERGE (c:Crime {name: crime}) MERGE (k)-[:CHARGED_WITH]->(c))
-            FOREACH (s IN $substances | MERGE (sub:Substance {name: s.name}) MERGE (k)-[r:INVOLVES]->(sub)
-                SET r.amount = s.amount)
+            FOREACH (s IN $substances | 
+                MERGE (sub:Substance {name: s.name}) 
+                CREATE (e:Evidence {amount: s.amount}) 
+                CREATE (k)-[:SEIZED]->(e) 
+                CREATE (e)-[:OF_SUBSTANCE]->(sub))
             FOREACH (p IN $people | MERGE (person:Person {name: p.name})
                 SET person.aliases = coalesce(p.aliases, [])
                 MERGE (person)-[r:INVOLVED_IN]->(k) SET r.role = p.role, r.charge = p.charge, r.sentence = p.sentence)
@@ -278,7 +281,7 @@ class Neo4jGraph:
                 """
                 MATCH (k:Case)-[:CHARGED_WITH]->(:Crime)<-[:DEFINES]-(a:Article)-[:HAS_CLAUSE]->(cl:Clause)
                 WHERE elementId(k) IN $case_ids
-                  AND (cl.number = 1 OR EXISTS { (k)-[:INVOLVES]->(:Substance)<-[:MENTIONS]-(cl) })
+                  AND (cl.number = 1 OR EXISTS { (k)-[:SEIZED]->(:Evidence)-[:OF_SUBSTANCE]->(:Substance)<-[:MENTIONS]-(cl) })
                 RETURN DISTINCT a.id AS article_id, a.title AS title, cl.number AS number, cl.text AS text
                 """,
                 case_ids=case_ids
